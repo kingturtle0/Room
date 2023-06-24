@@ -1,6 +1,5 @@
 import http from "http";
-import { Server } from "socket.io";
-import { instrument } from "@socket.io/admin-ui";
+import SocketIO from "socket.io";
 import express from "express";
 
 const app = express();
@@ -12,57 +11,21 @@ app.get("/", (_, res) => res.render("home"));
 app.get("/*", (_, res) => res.redirect("/"));
 
 const httpServer = http.createServer(app);
-const io = new Server(httpServer, {
-  cors: {
-    origin: ["https://admin.socket.io"],
-    credentials: true,
-  },
-});
-instrument(io, {
-  auth: false,
-});
+const wsServer = SocketIO(httpServer);
 
-function publicRooms() {
-  const {
-    sockets: {
-      adapter: { sids, rooms },
-    },
-  } = io;
-  const publicRooms = [];
-  rooms.forEach((_, key) => {
-    if (sids.get(key) === undefined) {
-      publicRooms.push(key);
-    }
-  });
-  return publicRooms;
-}
-
-function countRoom(roomName) {
-  return io.sockets.adapter.rooms.get(roomName)?.size;
-}
-
-io.on("connection", (socket) => {
-  socket.onAny((event) => {
-    console.log(`Socket Event: ${event}`);
-  });
-  socket.on("enter_room", (roomName, userName, done) => {
+wsServer.on("connection", (socket) => {
+  socket.on("join_room", (roomName) => {
     socket.join(roomName);
-    socket["username"] = userName;
-    done(countRoom(roomName));
-    socket.to(roomName).emit("welcome", socket.username, countRoom(roomName));
-    io.sockets.emit("room_change", publicRooms());
+    socket.to(roomName).emit("welcome");
   });
-  socket.on("disconnecting", () => {
-    socket.rooms.forEach((room) =>
-      socket.to(room).emit("bye", socket.username, countRoom(room) - 1)
-    );
+  socket.on("offer", (offer, roomName) => {
+    socket.to(roomName).emit("offer", offer);
   });
-  socket.on("disconnect", () => {
-    io.sockets.emit("room_change", publicRooms());
+  socket.on("answer", (answer, roomName) => {
+    socket.to(roomName).emit("answer", answer);
   });
-  socket.on("new_message", (msg, room, done) => {
-    socket.to(room).emit("new_message", `${socket.username}: ${msg}`);
-    done();
+  socket.on("ice", (ice, roomName) => {
+    socket.to(roomName).emit("ice", ice);
   });
 });
 
